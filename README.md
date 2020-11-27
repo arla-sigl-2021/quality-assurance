@@ -249,12 +249,114 @@ Try to implement a unit test to check that an error is thrown when the option pa
 
 ## Step 2: Implement functional test
 
-Now, let's test if the help-request API is working as expected.
+Now, let's step up to a higher level of test: functional tests.
 
-In this test, you will test the whole API, with the paging system.
+You will use [Cucumber](https://cucumber.io) to write [BDD](https://en.wikipedia.org/wiki/Behavior-driven_development) tests using the NodeJS implementation [Cucumber-js](https://cucumber.io/docs/installation/javascript/).
 
-You will create an API scenario where you will call several pages and expect the correct results.
+This tool seperates the test specification in seperated `.feature` files. Those features can be written by non-dev people in your team, and goes in the direction of BDD for writing tests.
 
+In this step, you will write a scenario that tests the paging on your `help-request` web api.
+
+This will be a nice functional test testing if the API works as expected, including the connection to the database.
+
+### Start your API with PostgreSQL
+
+Before starting the Cucumber specification, you should start :
+1. PostgreSQL used in the last workshop (with the data loaded):
+  - launch the docker-compose from the `arlaide-database` project: `docker-compose up -d`
+1. your web API **disabling** (for now) authentication on your `v1/help-request` route:
+  - To do so, you just have to remove or comment the `jwtCheck` in the parameter of the route handler.
+
+Make sure you can access help-requests on http://localhost:3000/v1/help-request?page=1&limit=15
+
+### Cucumber
+
+We prepared already necessary code under the `cucumber` folder of this repository.
+
+Copy the whole `cucumber` folder at the root of your groupXX's repository.
+
+Then, move to the cucumber folder, and install dependencies:
+```sh
+# From cucumber/ folder
+nvm use
+npm install
+```
+
+Then, have a look at the test inside the [cucumber/features](cucumber/features) folder:
+
+```plain
+# inside cucumber/features/help_requests.feature
+Feature: Help Requests
+
+    We want to query help requests page by page
+
+    Scenario Outline: Query pages of different sizes
+        Given <page> and <limit>
+        When a User calls help request API
+        Then the User should recieve <numberOfHelpRequests>
+
+        Examples:
+            | page | limit | numberOfHelpRequests |
+            | 1    | 5     | 5                    |
+            | 2    | 10    | 10                   |
+            | 3    | 15    | 15                   |
+```
+
+This cucumber feature describes in a templated way how the help-request API should behave
+when a user calls the API with different `page` and `limit` options.
+
+Note that you are outside of the code of your web API, as opposed to your unit tests behing directly inside the code of your API.
+
+Then, the corresponding step definitions:
+```js
+// inside cucumber/features/step_definitions/helpRequests.js
+const assert = require("assert");
+const fetch = require("node-fetch");
+const { Given, When, Then } = require("@cucumber/cucumber");
+
+Given("{int} and {int}", (page, limit) => {
+  this.page = page;
+  this.limit = limit;
+});
+
+When("a User calls help request API", async () => {
+  const response = await fetch(
+    `http://localhost:3000/v1/help-request?page=${this.page}&limit=${this.limit}`
+  );
+  const json = await response.json();
+  this.apiResponse = json;
+});
+
+Then("the User should recieve {int}", (expectedNumberOfHelpRequests) => {
+  if (this.apiResponse) {
+    assert.strictEqual(this.apiResponse.length, expectedNumberOfHelpRequests);
+  } else {
+    assert.fail("no API response!");
+  }
+});
+```
+> Note: For simplicity, we kept the code in JavaScript, it is possible to use TypeScript but we
+> think it is unecessary complexity for this workshop.
+
+This code implements the corresponding behaviour of each steps define in the `.feature` file:
+```plain
+...
+        Given <page> and <limit>
+        When a User calls help request API
+        Then the User should recieve <numberOfHelpRequests>
+        
+```
+Where corresponding steps are linked with the same `Given`, `When` and `Then` message:
+```js
+// Given <page> and <limit>
+Given("{int} and {int}", ...);
+
+// a User calls help request API
+When("a User calls help request API", ...);
+
+// Then the User should recieve <numberOfHelpRequests>
+Then("the User should recieve {int}", ...);
+```
 
 
 ## Step 3: Implement e2e test with Cypress
