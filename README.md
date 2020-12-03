@@ -37,7 +37,7 @@ npx ts-jest config:init
 ```
 
 Now, let's add a new script inside your `package.json` file to run test using jest when typing `npm test`:
-```json
+```json5
 // ...
   "scripts": {
     // "build": ...,
@@ -383,7 +383,7 @@ npm i --save-dev cypress
 ```
 
 Then add a new `script` entry in your `e2e/package.json` file:
-```json
+```json5
   //...
   "scripts": {
     //...
@@ -527,9 +527,15 @@ Once it is green, make sure test is failing if you enter wrong credentials as em
 
 ## Step 4: Integrate test to your CD pipeline
 
-You want to run tests over several environments:
-- local: your development machine over localhost
-- CI: from github action's servers over a release candidate
+You have three different environment for Arlaide:
+- local environment: your developper machine, where you run your application on http://localhost:XXXXX
+- CI (for Continuous Integration) environment: machines from Github used by your github action worfklows
+- Production (or PRO): the environment use by end users
+
+In the previous steps, you've run:
+- unit tests (with Jest) on your local environment
+- functional tests (with cucumber) on your local environment
+- Cypress tests directly on your production (using https://groupeXX.arla-sigl.fr)
 
 You will need to configure your application differently depending on which environment you're on.
 
