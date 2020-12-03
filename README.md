@@ -358,8 +358,211 @@ When("a User calls help request API", ...);
 Then("the User should recieve {int}", ...);
 ```
 
-
 ## Step 3: Implement e2e test with Cypress
+
+Let's install cypress.
+
+To do so, you will create a new `e2e` folder at the root your project's repository.
+You will setup nvm to use version 14 by creating a new file `.nvmrc` with:
+```plain
+v14
+```
+
+From your e2e/ folder, initiate a new node project by typing:
+```sh
+# from e2e/
+nvm use
+npm init --yes
+```
+
+Then, just install cypress using npm:
+```sh
+# from e2e
+# make sure your using correct node: nvm use
+npm i --save-dev cypress
+```
+
+Then add a new `script` entry in your `e2e/package.json` file:
+```json
+  //...
+  "scripts": {
+    //...
+    "cypress:open": "cypress open"
+    //...
+  }
+```
+
+Finally, open cypress locally by running:
+```sh
+# from e2e/
+# make sure you're using correct node version: nvm use
+npm run cypress:open
+```
+
+After some time, you should see a new window on your computer like:
+![cypress-open](docs/cypress-open.png)
+
+Cypress provides you with some example E2E tests.
+
+After clicking on `OK, got it!`, feel free to run some tests from this cypress console to see how cypress works.
+
+Source code of those test has been added under `e2e/cypress/integration/examples` folder.
+
+### Get started with Cypress in Arlaide
+
+Now that you can run tests from your machine, let's create an E2E test on Arlaide.
+
+As of today, you should all have login configured on your applications.
+
+So let's create a nice e2e test to verify that a user can login.
+
+### Create a user for cypress in your OAuth0 dashboard
+
+In order to login when running your E2E test, you need a valid user.
+
+From your dashboard of your IDP (OAuth0 in this case), create a new user with name and password of your choice.
+
+Once it is created, make sure you can login to your application with your newly created user, either from localhost or directly from your production address (https://groupeXX.arla-sigl.fr)
+
+### Write your login spec
+
+Cypress executes `spec` (for specifications), which describe numberous steps with assertion about what the user is suppose to see, recieve when he clicks/types on some elements.
+
+Let's create a new `spec` folder called `login`.
+
+You will create this folder under `e2e/cypress/integration/` folder.
+
+Create a new empty spec `user-login.spec.js`, inside your recently created `login` folder with:
+```js
+// inside e2e/cypress/integration/login/user-login.spec.js
+describe("Arlaide login", () => {
+  // Replace it with your groupe address
+  const arlaideUrl = "https://groupeXX.arla-sigl.fr";
+  it("should allow user to login", () => {
+    cy.visit(arlaideUrl);
+  })
+})
+```
+
+Make sure you've adapted `arlaideUrl` to your group address.
+
+You should see a new spec in your cypress console:
+![login-spec](docs/login-spec.png)
+
+> If you killed your console, you can start it again with `npm run cypress:open` from e2e/ folder
+
+Now let's run it, and you should see your login page:
+
+![login-spec-empty-run](docs/login-spec-run-empty.png)
+
+> Note: Here we use groupe11.arla-sigl.fr
+
+Sofar, we the simpliest test: you visit the login page of arlaide.
+
+**How to interact with elements from cypress javascript spec ?**
+
+First, you need to use [get selector](https://docs.cypress.io/api/commands/get.html#Syntax) to target an element of the DOM.
+
+You have many ways to select an element, and we refer you to examples in the cypress documentation: https://docs.cypress.io/api/commands/get.html#Examples
+
+The html login page is returned by Auth0. So you have to inspect the login page from your browser to see if you have some unique id to query the username and password input.
+
+Let's pick two selectors: 
+- `#1-email` to query the DOM element with `id='1-email'`. This will target username/email input field
+- `[name="password"]` to query the DOM element with the attribute `name="password"`. This will target the password input field
+
+In your specs, add the following lines after visiting arlaide:
+```js
+    cy.visit(arlaideUrl);
+    cy.get('#1-email');
+    cy.get('[name="password"]');
+```
+
+And disable chrome security to allow selection in iframes:
+```json
+// from e2e/cypress.json
+{
+  "chromeWebSecurity": false
+}
+```
+
+Run again the `user-login` spec from cypress console.
+
+You should see that your select commands worked, from the logs on the left:
+![cypress-success-select](docs/cypress-success-select.png)
+
+Let's interact with inputs!
+
+Use the [.type() command]() from cypress, and enter username and password of your recently created e2e user in Auth0:
+```js
+// from e2e/cypress/integration/login/user-login.spec.js
+    //...
+    cy.get('#1-email').type('E2E USERNAME');
+    cy.get('[name="password"]').type('E2E PASSWORD');
+```
+
+Now, add a last line to select and [click](https://docs.cypress.io/api/commands/click.html#Syntax) on the login button:
+```js
+  //...
+  cy.get('[aria-label="Log In"]').click();
+```
+
+Then, your last step is to expect what user is suppose to see after login.
+
+For the case of groupe11, users is redirected to this main page where she/he should see the `FRONTEND WORKSHOP` header.
+
+Using the [should cypress command](https://docs.cypress.io/api/commands/should.html#Examples), it would look like:
+```js
+//...
+cy.get('h1').contains('Frontend Workshop').should('be.visible') 
+```
+
+It gets any `h1` tags that contains `Frontend Workshop` as a direct child and check if the element is visible.
+
+Your turn to play!!
+
+Adapt your spec and expect at least 1 element that a user is suppose to see when logging in successfully.
+
+Once it is green, make sure test is failing if you enter wrong credentials as email/password.
 
 ## Step 4: Integrate test to your CD pipeline
 
+You want to run tests over several environments:
+- local: your development machine over localhost
+- CI: from github action's servers over a release candidate
+
+You will need to configure your application differently depending on which environment you're on.
+
+Those configurations are:
+- the Postgres address
+- the web API address
+
+### Different Postgres instances
+
+We created for you 2 different instances of Postgresql:
+1. ci.postgres.arla-sigl.fr : your CI (for Continuous Integration) instance of Postgres
+2. pro.postgresq.arla-sigl.fr : your production (pro) instance of Postgres
+
+The CI Postgres it the database that you will use to run all tests. This will enable you not to compromise any real data from your end users when executing some tests.
+
+> Note: We prefilled both of the databases with data from the arlaide-database workshop
+
+We also created one database user per group.
+Your user will be arlaide-group-XX (e.g. `arlaide-group-1`, `arlaide-group-10`...), and the password will be communicated to you privately.
+
+You should receive two different passwords:
+1. for ci.postgres.arla-sigl.fr
+1. for pro.postgres.arla-sigl.fr
+
+### Your different stages
+
+You want to execute your tests on:
+- Your localhost while your developing some new tests or features
+- Your CI environment when you want create a new release candidate (RC)
+
+### Create environment variables for your different stages
+
+### Set your CI environment in your project
+
+- Database url of the CI postgresql
+- CI user credentials
