@@ -626,7 +626,7 @@ const pool = new Pool({
   const MONGO_USER = process.env.DOC_DB_USER || 'sigl2021';
   const MONGO_PASSWORD = process.env.DOC_DB_PASSWORD || 'sigl2021';
 
-  const uri = `mongodb://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_HOST}:${MONGO_PORT}?authSource=admin`;
+  const uri = `mongodb://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_HOST}:${MONGO_PORT}?authSource=${MONGO_DB_NAME}`;
 
   const find = <T>(collectionName: string) => async (findQuery: FilterQuery<T>) => {
         //...
