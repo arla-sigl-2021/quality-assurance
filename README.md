@@ -3,10 +3,11 @@
 This workshop is made for EPITA SIGL 2021 students.
 
 You will learn how to:
-- implement unit test in node
-- implement basic fonctional test
-- implement e2e test using [Cypress.io](https://cypress.io)
-- adapt your CD pipeline to execute tests on each release
+- implement unit test in Node using [Jest](https://jestjs.io)
+- implement basic fonctional in Node test using [Cucumber](https://cucumber.io)
+- implement e2e test in Node using [Cypress.io](https://cypress.io)
+- configure a CI environment 
+- integrate tests to your CD pipeline
 
 ## Step 1: Implement unit test
 
@@ -525,50 +526,294 @@ Adapt your spec and expect at least 1 element that a user is suppose to see when
 
 Once it is green, make sure test is failing if you enter wrong credentials as email/password.
 
-## Step 4: Integrate test to your CD pipeline
+## Step 4: Create a CI environment 
 
-You have three different environment for Arlaide:
-- local environment: your developper machine, where you run your application on http://localhost:XXXXX
-- CI (for Continuous Integration) environment: machines from Github used by your github action worfklows
-- Production (or PRO): the environment use by end users
+In this step, you will setup a new environment: CI for Continuous Integration.
 
-In the previous steps, you've run:
-- unit tests (with Jest) on your local environment
-- functional tests (with cucumber) on your local environment
-- Cypress tests directly on your production (using https://groupeXX.arla-sigl.fr)
+The CI environment hosts your release candidates (RC).
 
-You will need to configure your application differently depending on which environment you're on.
+Your CI environment will expose:
+- Frontend on https://ci.groupeXX.arla-sigl.fr
+- Web API on https://api.ci.groupeXX.arla-sigl.fr
 
-Those configurations are:
-- the Postgres address
-- the web API address
+Create a new branch called `create-ci-env` (`git checkout -b create-ci-env`). 
 
-### Different Postgres instances
+Make sure all of the following changes are on this branch. This will be usefull for the last part of this step.
+
+### Different Database instances
 
 We created for you 2 different instances of Postgresql:
-1. ci.postgres.arla-sigl.fr : your CI (for Continuous Integration) instance of Postgres
-2. pro.postgresq.arla-sigl.fr : your production (pro) instance of Postgres
+1. ci.postgres.arla-sigl.fr: your CI (for Continuous Integration) instance of Postgres
+2. pro.postgresq.arla-sigl.fr: your production (pro) instance of Postgres
 
-The CI Postgres it the database that you will use to run all tests. This will enable you not to compromise any real data from your end users when executing some tests.
+And 2 different instances of MongoDB:
+1. ci.mongo.arla-sigl.fr: your CI instance of MongoDB
+1. pro.mongo.arla-sigl.fr: your production instance of MongoDB
+
+The CI databases are the one you will use to run tests. This will enable you not to compromise any real data from your end users when executing some tests.
 
 > Note: We prefilled both of the databases with data from the arlaide-database workshop
 
 We also created one database user per group.
-Your user will be arlaide-group-XX (e.g. `arlaide-group-1`, `arlaide-group-10`...), and the password will be communicated to you privately.
+Credentials for both databases are:
+- Database name: arlaide-group-XX (e.g. `arlaide-group-1`, `arlaide-group-10`...)
+- username: arlaide-group-XX (e.g. `arlaide-group-1`, `arlaide-group-10`...)
+- password: arlaide-group-XX (e.g. `arlaide-group-1`, `arlaide-group-10`...)
 
-You should receive two different passwords:
-1. for ci.postgres.arla-sigl.fr
-1. for pro.postgres.arla-sigl.fr
+> Note: you can't access both databases from your local machine, but only from the Scalway machines.
 
-### Your different stages
+### Adapt your web api
 
-You want to execute your tests on:
-- Your localhost while your developing some new tests or features
-- Your CI environment when you want create a new release candidate (RC)
+Change your dockerfile to take DB connection as `docker build` arguments. This will help us configure
+different image depending on which stage you want your image to run on (local, ci or pro).
 
-### Create environment variables for your different stages
+Apply changes to your `api/Dockerfile` like:
 
-### Set your CI environment in your project
+```dockerfile
+FROM node:14-alpine
 
-- Database url of the CI postgresql
-- CI user credentials
+COPY . /code
+WORKDIR /code
+
+
+ARG db_host
+ARG db_port
+ARG db_name
+ARG db_user
+ARG db_password
+
+ARG doc_db_host
+ARG doc_db_port
+ARG doc_db_name
+ARG doc_db_user
+ARG doc_db_password
+
+ENV RDS_HOST=${db_host}
+ENV RDS_PORT=${db_port}
+ENV RDS_NAME=${db_name}
+ENV RDS_USER=${db_user}
+ENV RDS_PASSWORD=${db_password}
+
+ENV DOC_DB_HOST=${doc_db_host}
+ENV DOC_DB_PORT=${doc_db_port}
+ENV DOC_DB_NAME=${doc_db_name}
+ENV DOC_DB_USER=${doc_db_user}
+ENV DOC_DB_PASSWORD=${doc_db_password}
+
+RUN npm i
+CMD npm start
+
+EXPOSE 3000
+
+```
+
+In your `api/src/db.ts` file, change the RDS connection configuration as bellow:
+```ts
+// in the nampespace RDS 
+const pool = new Pool({
+        host: process.env.RDS_HOST || "localhost",
+        port: +(process.env.RDS_PORT || 5432),
+        database: process.env.RDS_NAME || "arlaide",
+        user: process.env.RDS_USER || "sigl2021",
+        password: process.env.RDS_PASSWORD || "sigl2021"
+    });
+
+// in namespace DocumentDB
+//...
+  const MONGO_HOST = process.env.DOC_DB_HOST || 'localhost';
+  const MONGO_PORT = process.env.DOC_DB_PORT || 27017; 
+  const MONGO_DB_NAME = process.env.DOC_DB_NAME || 'arlaide';
+  const MONGO_USER = process.env.DOC_DB_USER || 'sigl2021';
+  const MONGO_PASSWORD = process.env.DOC_DB_PASSWORD || 'sigl2021';
+
+  const uri = `mongodb://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_HOST}:${MONGO_PORT}?authSource=admin`;
+
+  const find = <T>(collectionName: string) => async (findQuery: FilterQuery<T>) => {
+        //...
+        const database = client.db(MONGO_DB_NAME);
+        //...
+  }
+  //...
+
+```
+
+### Create a new CI workflow
+
+Before creating a new workflow, remove the pull_request trigger of from every workflows files that you currently have.
+
+For instance, you should remove the `pull_request: ...` close 
+```yml  
+  # This is a basic workflow to help you get started with Actions
+  name: CD
+
+  # Controls when the action will run. Triggers the workflow on push or pull request
+  # events but only for the master branch
+  on:
+    push:
+      branches: [ master ]
+    # REMOVE 2 lines below
+    pull_request:
+      branches: [ master ]
+```
+So it should look like:
+```yml
+  # This is a basic workflow to help you get started with Actions
+  name: CD
+
+  # Controls when the action will run. Triggers the workflow on push or pull request
+  # events but only for the master branch
+  on:
+    push:
+      branches: [ master ]
+  # ...
+```
+
+In your github action, add a `.github/workflows/ci.yml` file with :
+> NOTE: make sure to replace \<git_user\>/\<arla-group-XX\> by your group's info (e.g. for group11 ffauchille/arla-group-11)
+
+```yml
+name: Deploy CI
+
+on:
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build-and-deploy-ci-api:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Build and publish docker image
+        run: | 
+          docker build --build-arg db_host=${{ secrets.RDS_CI_HOST }} --build-arg db_port=${{ secrets.RDS_CI_PORT }} --build-arg db_name=${{ secrets.RDS_CI_NAME }} --build-arg db_user=${{ secrets.RDS_CI_USER }} --build-arg db_password=${{ secrets.RDS_CI_PASSWORD }} --build-arg doc_db_host=${{ secrets.DOC_DB_HOST }} --build-arg doc_db_port=${{ secrets.DOC_DB_PORT }} --build-arg doc_db_name=${{ secrets.DOC_DB_NAME }} --build-arg doc_db_user=${{ secrets.DOC_DB_USER }} --build-arg doc_db_password=${{ secrets.DOC_DB_PASSWORD }} -t docker.pkg.github.com/<git_user>/<arla-group-XX>/arlaide-api-ci:${{ github.sha }} api/
+          docker login docker.pkg.github.com -u ${{ secrets.DOCKER_USER }} -p ${{ secrets.DOCKER_PASSWORD }}
+          docker push docker.pkg.github.com/<git_user>/<arla-group-XX>/arlaide-api-ci:${{ github.sha }}
+
+      - name: Deploy on production VM
+        uses: appleboy/ssh-action@master
+        env:
+          TAG: ${{ github.sha }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          envs: TAG
+          script: |
+            docker login docker.pkg.github.com -u ${{ secrets.DOCKER_USER }} -p ${{ secrets.DOCKER_PASSWORD }}
+            docker pull docker.pkg.github.com/<git_user>/<arla-group-XX>/arlaide-api-ci:$TAG
+            (docker stop arlaide-api-ci && docker rm arlaide-api-ci) || echo "Nothing to stop..."
+            docker run -d --network web --name arlaide-api-ci --label traefik.enable=true --label traefik.docker.network=web --label traefik.frontend.rule=Host:ci.api.${{ secrets.SSH_HOST }} --label traefik.frontend.port=3000 docker.pkg.github.com/<git_user>/<arla-group-XX>/arlaide-api-ci:$TAG
+  
+  build-and-deploy-frontend-ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Build and publish docker image
+        run: | 
+          docker build --build-arg api_url=https://ci.api.${{ secrets.SSH_HOST }} -t docker.pkg.github.com/<git_user>/<arla-group-XX>/arlaide-ci:${{ github.sha }} .
+          docker login docker.pkg.github.com -u ${{ secrets.DOCKER_USER }} -p ${{ secrets.DOCKER_PASSWORD }}
+          docker push docker.pkg.github.com/<git_user>/<arla-group-XX>/arlaide-ci:${{ github.sha }}
+
+      - name: Deploy on production VM
+        uses: appleboy/ssh-action@master
+        env:
+          TAG: ${{ github.sha }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          envs: TAG
+          script: |
+            echo "TAG: $TAG"
+            docker login docker.pkg.github.com -u ${{ secrets.DOCKER_USER }} -p ${{ secrets.DOCKER_PASSWORD }}
+            docker pull docker.pkg.github.com/<git_user>/<arla-group-XX>/arlaide-ci:$TAG
+            (docker stop arlaide-ci && docker rm arlaide-ci) || echo "Nothing to stop..."
+            docker run -d --network web --name arlaide-ci --label traefik.enable=true --label traefik.docker.network=web --label traefik.frontend.rule=Host:ci.${{ secrets.SSH_HOST }} --label traefik.frontend.port=80 docker.pkg.github.com/<git_user>/<arla-group-XX>/arlaide-ci:$TAG
+```
+
+Then, create new secrets use in this new `ci.yml` github workflow.
+From your github repository, go to Settings > Secrets and add the follwing secrets values:
+- RDS_CI_HOST: ci.postgresql.arla-sigl.fr
+- RDS_CI_PORT: 5432
+- RDS_CI_NAME: arlaide-group-XX (replace XX by your group number)
+- RDS_CI_PASSWORD: arlaide-group-XX (replace XX by your group number)
+- RDS_CI_USER: arlaide-group-XX (replace XX by your group number)
+
+- DOC_DB_HOST: ci.mongo.arla-sigl.fr
+- DOC_DB_PORT: 27017
+- DOC_DB_NAME: arlaide-group-XX (replace XX by your group number)
+- DOC_DB_USER: arlaide-group-XX (replace XX by your group number)
+- DOC_DB_PASSWORD: arlaide-group-XX (replace XX by your group number)
+
+### Adapt your frontend build
+
+Modify your build script inside your frontend/package.json:
+```json5
+//...
+ "scripts": {
+    "build": "webpack --mode production --env.API_ENDPOINT=${API_ENDPOINT}",
+    "start": "webpack-dev-server --open"  
+  },
+//...
+```
+
+and the frontend's Dockerfile like:
+```Dockerfile
+FROM node:14-alpine AS build
+
+COPY frontend /code/
+WORKDIR /code
+
+ARG api_url
+ENV API_ENDPOINT=${api_url}
+
+RUN npm install
+RUN npm run build
+
+FROM nginx:stable
+
+COPY --from=build /code/build/* /usr/share/nginx/html/
+```
+
+This will enable to setup a different web API url when building the docker image (e.g. https://ci.api.groupeXX.arla-sigl.fr or api.groupeXX.arla-sigl.fr).
+
+This will be use by the ci.yaml workflow file.
+
+### Adapt your Auth configuration
+
+You need to allow auth requests from/to the new ci domain: https://ci.groupeXX.arla-sigl.fr.
+
+> Note: failing to do so would result in CORS issues
+
+From your Auth dashboard > Application add in every sections with url the new CI url (https://ci.groupeXX.arla-sigl.fr).
+
+Here it what it should look like with groupe11:
+![auth ci url 1](docs/auth-ci-url-1.png)
+![auth ci url 2](docs/auth-ci-url-2.png)
+
+Save your changes.
+
+### Deploy your CI environment
+
+To deploy your new CI environment, you need to create a new pull request in your github repository.
+
+To do so, push all your changes made from your `create-ci-env` branch:
+```sh
+git push origin create-ci-env
+```
+
+Then, from your github project page, go to the `Pull requests` tab > `New pull request` > select the `create-ci-env` branch > Create pull request.
+
+By creating the pull request, it should trigger a new workflow in the `Action` tab.
+
+Wait for this workflow to be green, and you should be able to log in to: https://ci.groupeXX.arla-sigl.fr
+
+Congratulation! You just created a new environment for Arlaide, which connects to CI databases.
+
+## Step 5: Integrate test to your CD pipeline
+
+This step will be shown in class.
