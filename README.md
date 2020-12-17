@@ -133,7 +133,7 @@ describe("extractPageOptions", () => {
     expect(limit).toEqual(10);
   });
 
-}
+})
 ```
 
 Now run this test and make sure it's running without error:
