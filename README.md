@@ -98,7 +98,8 @@ Instead, you will refactor the `extractPageOptions` to directly take the `query`
 export const extractPageOptions = (
   query: qs.ParsedQs
 ) => {
-    
+    const page = asNumber(query, "page");
+    const limit = asNumber(query, "limit");
     // ...
 }
 ```
